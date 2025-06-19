@@ -2,7 +2,7 @@
 """
 WebKnight Pro Elite Ultimate - Professional Web Reconnaissance Tool
 Version: 4.1 | Enterprise Grade
-Author: Security Research Team
+Author: @HacktifyDiaries
 Description: Advanced subdomain enumeration with intelligent verification,
              accurate status code detection, professional reporting,
              and comprehensive web asset discovery.
