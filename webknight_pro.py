@@ -3,9 +3,8 @@
 WebKnight Pro Elite Ultimate - Professional Web Reconnaissance Tool
 Version: 4.1 | Enterprise Grade
 Author: @HacktifyDiaries
-Description: Advanced subdomain enumeration with intelligent verification,
-             accurate status code detection, professional reporting,
-             and comprehensive web asset discovery.
+Description: Advanced web reconnaissance with intelligent verification,
+             accurate status code detection, and comprehensive reporting.
 """
 
 import argparse
@@ -19,13 +18,10 @@ import random
 import time
 from datetime import datetime
 from colorama import init, Fore, Style
-import re
 import os
 import json
-import multiprocessing
-import threading
-from typing import List, Dict, Tuple, Optional
 import warnings
+from typing import Dict, List, Optional, Tuple
 
 # Suppress SSL warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -58,7 +54,7 @@ SUBDOMAIN_WORDLIST = [
     "smtp", "pop", "imap", "git", "svn", "vpn", "proxy", "firewall"
 ]
 
-# Comprehensive directory list with proper weighting
+# Directory scanning configuration
 CRITICAL_DIRECTORIES = [
     ("/admin", 10), ("/wp-admin", 10), ("/administrator", 10), ("/cpanel", 10),
     ("/manager", 9), ("/login", 9), ("/admin/login", 9), ("/admincp", 9),
@@ -70,9 +66,10 @@ CRITICAL_DIRECTORIES = [
 ]
 
 # Common ports for scanning
-COMMON_PORTS = [21, 22, 23, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 1433, 1521, 3306, 3389, 5432, 5900, 5985, 6379, 8000, 8008, 8080, 8443, 8888, 9000, 9200, 11211, 27017]
+COMMON_PORTS = [21, 22, 23, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 
+                1433, 1521, 3306, 3389, 5432, 5900, 5985, 6379, 8000, 8008, 
+                8080, 8443, 8888, 9000, 9200, 11211, 27017]
 
-# ===== TOOL CLASS =====
 class WebKnightPro:
     def __init__(self, domain: str):
         self.domain = self._clean_domain(domain)
@@ -144,11 +141,10 @@ class WebKnightPro:
         except Exception as e:
             print(Fore.YELLOW + f"[!] DNS resolution failed: {str(e)}")
 
-    async def scan_subdomains(self, bruteforce: bool = False, threads: int = 30):
+    async def scan_subdomains(self, bruteforce: bool = False):
         """Scan for subdomains with multiple verification methods"""
         print(Fore.CYAN + "[*] Starting subdomain enumeration..." + Style.RESET_ALL)
         
-        # Check common subdomains
         tasks = []
         for sub in SUBDOMAIN_WORDLIST:
             full_domain = f"{sub}.{self.domain}"
@@ -158,15 +154,7 @@ class WebKnightPro:
         for i in range(0, len(tasks), CONFIG["max_concurrency"]):
             batch = tasks[i:i + CONFIG["max_concurrency"]]
             await asyncio.gather(*batch)
-            await asyncio.sleep(CONFIG["delay_between_requests"])  # Rate limiting
-
-        # Additional checks for common patterns
-        common_patterns = [
-            f"dev-{self.domain}", f"staging-{self.domain}", 
-            f"test-{self.domain}", f"api-{self.domain}"
-        ]
-        for pattern in common_patterns:
-            await self._verify_and_scan_subdomain(pattern)
+            await asyncio.sleep(CONFIG["delay_between_requests"])
 
     async def _verify_and_scan_subdomain(self, subdomain: str) -> None:
         """Verify subdomain exists and scan it"""
@@ -187,10 +175,10 @@ class WebKnightPro:
                 https_result = await self._check_url(https_url)
                 
                 # Prefer HTTPS if available
-                if https_result and https_result["status"] < 500:
+                if https_result and (https_result.get("status", 0) or 0) < 500:
                     result = https_result
                     protocol = "https"
-                elif http_result and http_result["status"] < 500:
+                elif http_result and (http_result.get("status", 0) or 0) < 500:
                     result = http_result
                     protocol = "http"
                 else:
@@ -199,13 +187,13 @@ class WebKnightPro:
                 if result:
                     self.results["subdomains"][subdomain] = {
                         "url": result["url"],
-                        "status": result["status"],
-                        "content_length": result["content_length"],
-                        "final_url": result["final_url"],
+                        "status": result.get("status", 0) or 0,
+                        "content_length": result.get("content_length", 0),
+                        "final_url": result.get("final_url", ""),
                         "protocol": protocol,
                         "ip": await self._get_ip_for_subdomain(subdomain),
                         "headers": result.get("headers", {}),
-                        "technologies": await self._detect_tech(result["final_url"])
+                        "technologies": await self._detect_tech(result.get("final_url", ""))
                     }
         except Exception as e:
             print(Fore.YELLOW + f"[!] Error scanning {subdomain}: {str(e)}")
@@ -236,13 +224,13 @@ class WebKnightPro:
             results = await asyncio.gather(*batch)
             
             for result in results:
-                if result and result["status"] < 500:
+                if result and (result.get("status", 0) or 0) < 500:
                     dir_path = urlparse(result["url"]).path
                     self.results["directories"][dir_path] = {
                         "url": result["url"],
-                        "status": result["status"],
-                        "content_length": result["content_length"],
-                        "final_url": result["final_url"],
+                        "status": result.get("status", 0) or 0,
+                        "content_length": result.get("content_length", 0),
+                        "final_url": result.get("final_url", ""),
                         "headers": result.get("headers", {}),
                         "redirect_chain": result.get("redirect_chain", [])
                     }
@@ -255,9 +243,7 @@ class WebKnightPro:
         print(Fore.CYAN + f"[*] Scanning top {len(ports)} ports..." + Style.RESET_ALL)
         
         targets = set()
-        # Add main domain
         targets.add(self.domain)
-        # Add all discovered subdomains
         targets.update(self.results["subdomains"].keys())
         
         tasks = []
@@ -269,7 +255,7 @@ class WebKnightPro:
         for i in range(0, len(tasks), CONFIG["max_concurrency"]):
             batch = tasks[i:i + CONFIG["max_concurrency"]]
             await asyncio.gather(*batch)
-            await asyncio.sleep(0.1)  # Rate limiting
+            await asyncio.sleep(0.1)
 
     async def _scan_port(self, host: str, port: int) -> None:
         """Scan a single port on a host"""
@@ -281,7 +267,6 @@ class WebKnightPro:
             writer.close()
             await writer.wait_closed()
             
-            # Get service banner if possible
             service = await self._get_service_banner(host, port)
             
             if host not in self.results["open_ports"]:
@@ -302,7 +287,6 @@ class WebKnightPro:
         """Attempt to get service banner"""
         try:
             if port in [80, 443, 8080, 8443]:
-                # HTTP service
                 protocol = "https" if port in [443, 8443] else "http"
                 url = f"{protocol}://{host}:{port}"
                 try:
@@ -313,7 +297,6 @@ class WebKnightPro:
                 except:
                     return ""
             else:
-                # Generic TCP service
                 reader, writer = await asyncio.open_connection(host, port)
                 writer.write(b"GET / HTTP/1.0\r\n\r\n")
                 data = await reader.read(1024)
@@ -372,10 +355,26 @@ class WebKnightPro:
                     }
             except aiohttp.ClientError as e:
                 if attempt == CONFIG["max_retries"] - 1:
-                    return None
+                    return {
+                        "url": url,
+                        "final_url": url,
+                        "status": 0,
+                        "content_length": 0,
+                        "headers": {},
+                        "redirect_chain": [],
+                        "content_type": ''
+                    }
                 await asyncio.sleep(1)
             except Exception as e:
-                return None
+                return {
+                    "url": url,
+                    "final_url": url,
+                    "status": 0,
+                    "content_length": 0,
+                    "headers": {},
+                    "redirect_chain": [],
+                    "content_type": ''
+                }
 
     async def _detect_tech(self, url: str) -> Dict:
         """Detect technologies used by a web application"""
@@ -391,7 +390,6 @@ class WebKnightPro:
                 if powered_by:
                     tech['platform'] = powered_by
                 
-                # Check for common frameworks
                 content = await response.text()
                 if 'wp-content' in content:
                     tech['cms'] = 'WordPress'
@@ -400,7 +398,6 @@ class WebKnightPro:
                 elif 'Drupal' in content:
                     tech['cms'] = 'Drupal'
                 
-                # Check for frontend frameworks
                 if 'react' in content.lower():
                     tech['frontend'] = 'React'
                 elif 'vue' in content.lower():
@@ -432,12 +429,12 @@ class WebKnightPro:
         # Subdomains
         if self.results["subdomains"]:
             print(Fore.YELLOW + "\n[ DISCOVERED SUBDOMAINS ]" + Style.RESET_ALL)
-            for subdomain, data in sorted(self.results["subdomains"].items()):
-                status = data["status"]
+            for subdomain, data in self.results["subdomains"].items():
+                status = data.get("status", 0) or 0
                 status_color = Fore.GREEN if status == 200 else Fore.YELLOW if status < 400 else Fore.RED
                 
                 print(f"{Fore.CYAN}{subdomain}{Style.RESET_ALL}")
-                print(f"  URL: {data['url']}")
+                print(f"  URL: {data.get('url', '')}")
                 print(f"  Status: {status_color}{status}{Style.RESET_ALL}")
                 print(f"  IP: {data.get('ip', 'Unknown')}")
                 if data.get('technologies'):
@@ -447,15 +444,18 @@ class WebKnightPro:
         # Directories
         if self.results["directories"]:
             print(Fore.YELLOW + "\n[ DIRECTORY FINDINGS ]" + Style.RESET_ALL)
-            for path, data in sorted(self.results["directories"].items(), key=lambda x: x[1]['status']):
-                status = data["status"]
+            for path, data in sorted(
+                self.results["directories"].items(),
+                key=lambda x: (x[1].get('status', 0) or 0, x[0])
+            ):
+                status = data.get("status", 0) or 0
                 status_color = Fore.GREEN if status == 200 else Fore.YELLOW if status < 400 else Fore.RED
                 
                 print(f"{Fore.CYAN}{path}{Style.RESET_ALL}")
-                print(f"  URL: {data['url']}")
+                print(f"  URL: {data.get('url', '')}")
                 print(f"  Status: {status_color}{status}{Style.RESET_ALL}")
                 if data.get('redirect_chain'):
-                    print(f"  Redirects: {' -> '.join(str(r['status']) for r in data['redirect_chain'])}")
+                    print(f"  Redirects: {' -> '.join(str(r.get('status', '')) for r in data['redirect_chain'])}")
                 print()
         
         # Open Ports
@@ -463,10 +463,10 @@ class WebKnightPro:
             print(Fore.YELLOW + "\n[ OPEN PORTS ]" + Style.RESET_ALL)
             for host, ports in self.results["open_ports"].items():
                 print(f"{Fore.CYAN}{host}{Style.RESET_ALL}")
-                for port_info in sorted(ports, key=lambda x: x['port']):
-                    print(f"  {port_info['port']}/tcp - {port_info.get('service', 'unknown')}")
+                for port_info in sorted(ports, key=lambda x: x.get('port', 0)):
+                    print(f"  {port_info.get('port', 0)}/tcp - {port_info.get('service', 'unknown')}")
                     if port_info.get('banner'):
-                        print(f"    Banner: {port_info['banner']}")
+                        print(f"    Banner: {port_info.get('banner', '')}")
                 print()
         
         print(Fore.CYAN + "="*80)
@@ -479,7 +479,6 @@ class WebKnightPro:
             json.dump(self.results, f, indent=2)
         print(Fore.GREEN + f"\n[+] Results saved to {filename}")
 
-# ===== MAIN =====
 async def main():
     parser = argparse.ArgumentParser(description="WebKnight Pro Elite - Professional Web Reconnaissance Tool")
     parser.add_argument("-d", "--domain", required=True, help="Target domain to scan")
